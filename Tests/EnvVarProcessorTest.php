@@ -997,6 +997,27 @@ CSV;
     }
 
     /**
+     * @testWith ["http://foo.com\\bar"]
+     *           ["\\\\foo.com/bar"]
+     *           ["a\rb"]
+     *           ["a\nb"]
+     *           ["a\tb"]
+     *           ["\u0000foo"]
+     *           ["foo\u0000"]
+     *           [" foo"]
+     *           ["foo "]
+     *           [":"]
+     */
+    public function testGetEnvBadUrl(string $url)
+    {
+        $this->expectException(RuntimeException::class);
+
+        (new EnvVarProcessor(new Container()))->getEnv('url', 'foo', static function () use ($url): string {
+            return $url;
+        });
+    }
+
+    /**
      * @testWith    ["", "string"]
      *              [null, ""]
      *              [false, "bool"]
