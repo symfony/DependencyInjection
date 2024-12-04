@@ -1,6 +1,11 @@
 CHANGELOG
 =========
 
+7.3
+---
+
+ * Make `#[AsTaggedItem]` repeatable
+
 7.2
 ---
 

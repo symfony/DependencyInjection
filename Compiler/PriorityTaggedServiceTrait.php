@@ -92,6 +92,21 @@ trait PriorityTaggedServiceTrait
 
                 $services[] = [$priority, ++$i, $index, $serviceId, $class];
             }
+
+            if ($class) {
+                $attributes = (new \ReflectionClass($class))->getAttributes(AsTaggedItem::class);
+                $attributeCount = \count($attributes);
+
+                foreach ($attributes as $attribute) {
+                    $instance = $attribute->newInstance();
+
+                    if (!$instance->index && 1 < $attributeCount) {
+                        throw new InvalidArgumentException(\sprintf('Attribute "%s" on class "%s" cannot have an empty index when repeated.', AsTaggedItem::class, $class));
+                    }
+
+                    $services[] = [$instance->priority ?? 0, ++$i, $instance->index ?? $serviceId, $serviceId, $class];
+                }
+            }
         }
 
         uasort($services, static fn ($a, $b) => $b[0] <=> $a[0] ?: $a[1] <=> $b[1]);
