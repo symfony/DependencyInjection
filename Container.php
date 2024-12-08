@@ -291,6 +291,14 @@ class Container implements ContainerInterface, ResetInterface
     }
 
     /**
+     * @internal
+     */
+    public function resetEnvCache(): void
+    {
+        $this->envCache = [];
+    }
+
+    /**
      * Gets all service ids.
      *
      * @return string[]

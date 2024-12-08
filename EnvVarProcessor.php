@@ -374,5 +374,9 @@ class EnvVarProcessor implements EnvVarProcessorInterface, ResetInterface
     {
         $this->loadedVars = [];
         $this->loaders = $this->originalLoaders;
+
+        if ($this->container instanceof Container) {
+            $this->container->resetEnvCache();
+        }
     }
 }
