@@ -5,6 +5,7 @@ CHANGELOG
 ---
 
  * Make `#[AsTaggedItem]` repeatable
+ * Support `@>` as a shorthand for `!service_closure` in yaml files
 
 7.2
 ---

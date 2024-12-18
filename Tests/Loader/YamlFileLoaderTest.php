@@ -466,6 +466,15 @@ class YamlFileLoaderTest extends TestCase
         $this->assertEquals(new ServiceClosureArgument(new Reference('bar', ContainerInterface::IGNORE_ON_INVALID_REFERENCE)), $container->getDefinition('foo')->getArgument(0));
     }
 
+    public function testParseShortServiceClosure()
+    {
+        $container = new ContainerBuilder();
+        $loader = new YamlFileLoader($container, new FileLocator(self::$fixturesPath.'/yaml'));
+        $loader->load('services_with_short_service_closure.yml');
+
+        $this->assertEquals(new ServiceClosureArgument(new Reference('bar')), $container->getDefinition('foo')->getArgument(0));
+    }
+
     public function testNameOnlyTagsAreAllowedAsString()
     {
         $container = new ContainerBuilder();
