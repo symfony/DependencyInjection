@@ -61,5 +61,6 @@ interface FunctionalInterface
 interface NonFunctionalInterface
 {
     public function foo();
+
     public function bar();
 }
