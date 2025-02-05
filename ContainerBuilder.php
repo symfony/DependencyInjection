@@ -1352,6 +1352,38 @@ class ContainerBuilder extends Container implements TaggedContainerInterface
     }
 
     /**
+     * Returns service ids for a given tag, asserting they have the "container.excluded" tag.
+     *
+     *  Example:
+     *
+     *      $container->register('foo')->addExcludeTag('my.tag', ['hello' => 'world'])
+     *
+     *      $serviceIds = $container->findExcludedServiceIds('my.tag');
+     *      foreach ($serviceIds as $serviceId => $tags) {
+     *          foreach ($tags as $tag) {
+     *              echo $tag['hello'];
+     *          }
+     *      }
+     *
+     * @return array<string, array> An array of tags with the tagged service as key, holding a list of attribute arrays
+     */
+    public function findExcludedServiceIds(string $tagName): array
+    {
+        $this->usedTags[] = $tagName;
+        $tags = [];
+        foreach ($this->getDefinitions() as $id => $definition) {
+            if ($definition->hasTag($tagName)) {
+                if (!$definition->hasTag('container.excluded')) {
+                    throw new InvalidArgumentException(\sprintf('The service "%s" tagged "%s" is missing the "container.excluded" tag.', $id, $tagName));
+                }
+                $tags[$id] = $definition->getTag($tagName);
+            }
+        }
+
+        return $tags;
+    }
+
+    /**
      * Returns all tags the defined services use.
      *
      * @return string[]

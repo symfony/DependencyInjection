@@ -1062,20 +1062,18 @@ class ContainerBuilderTest extends TestCase
         $container->merge(new ContainerBuilder());
     }
 
-    public function testfindTaggedServiceIds()
+    public function testFindTaggedServiceIds()
     {
         $builder = new ContainerBuilder();
-        $builder
-            ->register('foo', 'Bar\FooClass')
+        $builder->register('foo', 'Bar\FooClass')
+            ->setAbstract(true)
             ->addTag('foo', ['foo' => 'foo'])
             ->addTag('bar', ['bar' => 'bar'])
-            ->addTag('foo', ['foofoo' => 'foofoo'])
-        ;
-        $builder
-            ->register('bar', 'Bar\FooClass')
+            ->addTag('foo', ['foofoo' => 'foofoo']);
+        $builder->register('bar', 'Bar\FooClass')
             ->addTag('foo')
-            ->addTag('container.excluded')
-        ;
+            ->addTag('container.excluded');
+
         $this->assertEquals([
             'foo' => [
                 ['foo' => 'foo'],
@@ -1083,6 +1081,45 @@ class ContainerBuilderTest extends TestCase
             ],
         ], $builder->findTaggedServiceIds('foo'), '->findTaggedServiceIds() returns an array of service ids and its tag attributes');
         $this->assertEquals([], $builder->findTaggedServiceIds('foobar'), '->findTaggedServiceIds() returns an empty array if there is annotated services');
+    }
+
+    public function testFindTaggedServiceIdsThrowsWhenAbstract()
+    {
+        $builder = new ContainerBuilder();
+        $builder->register('foo', 'Bar\FooClass')
+            ->setAbstract(true)
+            ->addTag('foo', ['foo' => 'foo']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The service "foo" tagged "foo" must not be abstract.');
+        $builder->findTaggedServiceIds('foo', true);
+    }
+
+    public function testFindExcludedServiceIds()
+    {
+        $builder = new ContainerBuilder();
+        $builder->register('myservice', 'Bar\FooClass')
+            ->addTag('foo', ['foo' => 'foo'])
+            ->addTag('bar', ['bar' => 'bar'])
+            ->addTag('foo', ['foofoo' => 'foofoo'])
+            ->addExcludeTag('container.excluded');
+
+        $expected = ['myservice' => [['foo' => 'foo'], ['foofoo' => 'foofoo']]];
+        $this->assertSame($expected, $builder->findExcludedServiceIds('foo'));
+        $this->assertSame([], $builder->findExcludedServiceIds('foofoo'));
+    }
+
+    public function testFindExcludedServiceIdsThrowsWhenNotExcluded()
+    {
+        $builder = new ContainerBuilder();
+        $builder->register('myservice', 'Bar\FooClass')
+            ->addTag('foo', ['foo' => 'foo'])
+            ->addTag('bar', ['bar' => 'bar'])
+            ->addTag('foo', ['foofoo' => 'foofoo']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('The service "myservice" tagged "foo" is missing the "container.excluded" tag.');
+        $builder->findExcludedServiceIds('foo', true);
     }
 
     public function testFindUnusedTags()
