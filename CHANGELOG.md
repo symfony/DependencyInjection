@@ -6,6 +6,7 @@ CHANGELOG
 
  * Make `#[AsTaggedItem]` repeatable
  * Support `@>` as a shorthand for `!service_closure` in yaml files
+ * Don't skip classes with private constructor when autodiscovering
 
 7.2
 ---
