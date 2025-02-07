@@ -2185,6 +2185,12 @@ EOF;
             if ($edge->isLazy() || !$value instanceof Definition || !$value->isShared()) {
                 return false;
             }
+
+            // When the source node is a proxy or ghost, it will construct its references only when the node itself is initialized.
+            // Since the node can be cloned before being fully initialized, we do not know how often its references are used.
+            if ($this->getProxyDumper()->isProxyCandidate($value)) {
+                return false;
+            }
             $ids[$edge->getSourceNode()->getId()] = true;
         }
 
