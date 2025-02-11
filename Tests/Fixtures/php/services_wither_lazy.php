@@ -61,7 +61,7 @@ class Symfony_DI_PhpDumper_Service_Wither_Lazy extends Container
 
         $instance = new \Symfony\Component\DependencyInjection\Tests\Compiler\Wither();
 
-        $a = new \Symfony\Component\DependencyInjection\Tests\Compiler\Foo();
+        $a = ($container->privates['Symfony\\Component\\DependencyInjection\\Tests\\Compiler\\Foo'] ??= new \Symfony\Component\DependencyInjection\Tests\Compiler\Foo());
 
         $instance = $instance->withFoo1($a);
         $instance = $instance->withFoo2($a);
