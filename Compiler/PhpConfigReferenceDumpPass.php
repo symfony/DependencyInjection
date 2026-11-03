@@ -1,0 +1,208 @@
+<?php
+
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
+
+namespace Symfony\Component\DependencyInjection\Compiler;
+
+use Symfony\Component\Config\Definition\ArrayShapeGenerator;
+use Symfony\Component\Config\Loader\ParamConfigurator;
+use Symfony\Component\Config\Resource\FileResource;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Loader\Configurator\AppReference;
+use Symfony\Component\ExpressionLanguage\Expression;
+use Symfony\Component\Routing\Loader\Configurator\RoutesReference;
+
+/**
+ * @internal
+ */
+class PhpConfigReferenceDumpPass implements CompilerPassInterface
+{
+    private const REFERENCE_TEMPLATE = <<<'PHP'
+        <?php
+
+        // This file is auto-generated and is for apps only. Bundles SHOULD NOT rely on its content.
+
+        namespace Symfony\Component\DependencyInjection\Loader\Configurator;
+
+        use Symfony\Component\Config\Loader\ParamConfigurator as Param;
+
+        {APP_TYPES}
+        final class App
+        {
+            {APP_PARAM}
+            public static function config(array $config): array
+            {
+                /** @var ConfigType $config */
+                $config = AppReference::config($config);
+
+                return $config;
+            }
+        }
+
+        PHP;
+
+    private const ROUTES_TEMPLATE = <<<'PHP'
+
+        namespace Symfony\Component\Routing\Loader\Configurator;
+
+        {ROUTES_TYPES}
+        final class Routes
+        {
+            {ROUTES_PARAM}
+            public static function config(array $config): array
+            {
+                return $config;
+            }
+        }
+
+        PHP;
+
+    private const WHEN_ENV_APP_TEMPLATE = <<<'PHPDOC'
+
+         *     "when@{ENV}"?: array{
+         *         imports?: ImportsConfig,
+         *         parameters?: ParametersConfig,
+         *         services?: ServicesConfig,{SHAPE}
+         *     },
+        PHPDOC;
+
+    private const ROUTES_TYPES_TEMPLATE = <<<'PHPDOC'
+
+         * @psalm-type RoutesConfig = array{{SHAPE}
+         *     ...<string, RouteConfig|ImportConfig|AliasConfig>
+         * }
+         */
+        PHPDOC;
+
+    private const WHEN_ENV_ROUTES_TEMPLATE = <<<'PHPDOC'
+
+         *     "when@{ENV}"?: array<string, RouteConfig|ImportConfig|AliasConfig>,
+        PHPDOC;
+
+    public function __construct(
+        private string $referenceFile,
+        private ExtensionConfigTrees $configTrees,
+    ) {
+    }
+
+    public function process(ContainerBuilder $container): void
+    {
+        $knownEnvs = $container->hasParameter('.container.known_envs') ? $container->getParameter('.container.known_envs') : [$container->getParameter('kernel.environment')];
+        $knownEnvs = array_unique($knownEnvs);
+        sort($knownEnvs);
+        $extensionsPerEnv = [];
+        $appTypes = '';
+        $trees = [];
+
+        $anyEnvExtensions = [];
+        foreach ($this->configTrees->get($container) as [$alias, $extension, $tree, $envs]) {
+            $anyEnvExtensions[$alias] = $extension;
+            $trees[$alias] = $tree;
+
+            if (null === $envs) {
+                continue;
+            }
+
+            foreach ($knownEnvs as $env) {
+                if ($envs[$env] ?? $envs['all'] ?? false) {
+                    $extensionsPerEnv[$env][] = $extension;
+                } else {
+                    unset($anyEnvExtensions[$alias]);
+                }
+            }
+        }
+        krsort($extensionsPerEnv);
+
+        $resolveAlias = fn (string $alias): ?string => isset($trees[$alias]) ? $this->camelCase($alias).'Config' : null;
+        foreach ($trees as $alias => $tree) {
+            $appTypes .= \sprintf("\n * @psalm-type %s = %s", $this->camelCase($alias).'Config', ArrayShapeGenerator::generate($tree, $resolveAlias));
+        }
+
+        $r = new \ReflectionClass(AppReference::class);
+
+        if (false === $i = strpos($phpdoc = $r->getDocComment(), "\n * @psalm-type ConfigType = ")) {
+            throw new \LogicException(\sprintf('Cannot insert config shape in "%s".', AppReference::class));
+        }
+        $appTypes = substr_replace($phpdoc, $appTypes, $i, 0);
+
+        if (false === $i = strrpos($phpdoc = $appTypes, "\n *     ...<string, ExtensionType|array{")) {
+            throw new \LogicException(\sprintf('Cannot insert config shape in "%s".', AppReference::class));
+        }
+        $appTypes = substr_replace($phpdoc, $this->getShapeForExtensions($anyEnvExtensions), $i, 0);
+        $i += \strlen($appTypes) - \strlen($phpdoc);
+
+        foreach ($extensionsPerEnv as $env => $extensions) {
+            $appTypes = substr_replace($appTypes, strtr(self::WHEN_ENV_APP_TEMPLATE, [
+                '{ENV}' => $env,
+                '{SHAPE}' => $this->getShapeForExtensions($extensions, '    '),
+            ]), $i, 0);
+        }
+        $appParam = $r->getMethod('config')->getDocComment();
+
+        $routesReference = '';
+        if (class_exists(RoutesReference::class)) {
+            $r = new \ReflectionClass(RoutesReference::class);
+
+            if (false === $i = strpos($phpdoc = $r->getDocComment(), "\n * @psalm-type RoutesConfig = ")) {
+                throw new \LogicException(\sprintf('Cannot insert config shape in "%s".', RoutesReference::class));
+            }
+            $routesTypes = '';
+            foreach ($knownEnvs as $env) {
+                $routesTypes .= strtr(self::WHEN_ENV_ROUTES_TEMPLATE, ['{ENV}' => $env]);
+            }
+            if ('' !== $routesTypes) {
+                $routesTypes = strtr(self::ROUTES_TYPES_TEMPLATE, ['{SHAPE}' => $routesTypes]);
+                $routesTypes = substr_replace($phpdoc, $routesTypes, $i);
+            }
+
+            $routesReference = strtr(self::ROUTES_TEMPLATE, [
+                '{ROUTES_TYPES}' => $routesTypes,
+                '{ROUTES_PARAM}' => $r->getMethod('config')->getDocComment(),
+            ]);
+        }
+
+        $appTypes = str_replace('\\'.ParamConfigurator::class, 'Param', $appTypes);
+
+        if (!class_exists(Expression::class)) {
+            $appTypes = str_replace('|ExpressionConfigurator', '', $appTypes);
+        }
+
+        $configReference = strtr(self::REFERENCE_TEMPLATE, [
+            '{APP_TYPES}' => $appTypes,
+            '{APP_PARAM}' => $appParam,
+        ]).$routesReference;
+
+        $dir = \dirname($this->referenceFile);
+        if (is_dir($dir) && is_writable($dir)) {
+            if (!is_file($this->referenceFile) || file_get_contents($this->referenceFile) !== $configReference) {
+                file_put_contents($this->referenceFile, $configReference);
+            }
+            $container->addResource(new FileResource($this->referenceFile));
+        }
+    }
+
+    private function camelCase(string $input): string
+    {
+        $output = ucfirst(str_replace(' ', '', ucwords(str_replace('_', ' ', $input))));
+
+        return preg_replace('#\W#', '', $output);
+    }
+
+    private function getShapeForExtensions(array $extensions, string $indent = ''): string
+    {
+        $shape = '';
+        foreach ($extensions as $extension) {
+            $type = $this->camelCase($extension->getAlias()).'Config';
+            $shape .= \sprintf("\n *     %s%s?: %s,", $indent, $extension->getAlias(), $type);
+        }
+
+        return $shape;
+    }
+}
